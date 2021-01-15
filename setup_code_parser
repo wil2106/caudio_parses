@@ -1,0 +1,139 @@
+{
+    let variables = {};
+    
+    let synthTypes = ["AMSynth", "DuoSynth", "FMSynth", "MembraneSynth", "MetalSynth", 
+    "MonoSynth", "NoiseSynth", "PluckSynth", "PolySynth", "Synth"]
+    
+    let effectTypes = ["AutoFilter", "AutoPanner", "AutoWah", "BitCrusher", 
+    "Chebyshev", "Chorus", "Distortion", "FeedbackDelay", "Freeverb", "FrequencyShifter",
+    "JCReverb", "MidSideEffect", "Phaser", "PingPongDelay", "PitchShift", "Reverb", 
+    "StereoWidener", "Tremolo", "Vibrato"]
+    
+    function createVariable(variableName, type){
+		variables[variableName] = type
+    }
+    
+    function checkVariableDeclaration(string){
+		if(!variables.hasOwnProperty(string)){
+        	error(`variable '${string}' not declared`)
+        }
+    }  
+    
+    function checkEffectVariablesApplied(string){
+		if(!variables.hasOwnProperty(string)){
+        	error(`variable '${string}' not declared`)
+        }
+        if(!effectTypes.includes(variables[string])){
+        	error(`variable '${string}' not is not an effect type`)
+        }
+    }  
+    
+    function extractString(pegObject){
+		return pegObject.toString().split(",").join("")
+    }
+}
+
+Code = Statement*
+
+Statement = 
+/*
+Synth declaration
+*/
+variableName:Word Space* "=" Space* synthType:SynthType "()" Space* EOL*{
+	let variableNameString = extractString(variableName)
+	createVariable(variableNameString, synthType)
+	return `this.synths['${variableNameString}'] = new ToneJS.${synthType}().toMaster()`
+}
+/
+/*
+Effect declaration
+*/
+variableName:Word Space* "=" Space* effectType:EffectType "()" Space* EOL*{
+	let variableNameString = extractString(variableName)
+	createVariable(variableNameString, effectType)
+	return `this.synths['${variableNameString}'] = new ToneJS.${effectType}().toMaster()`
+}
+/
+/*
+Declaration + Assignation 
+*/
+variableName:Word properties:Properties? Space* "=" Space* calc:Calculation Space* EOL*{
+	
+    let variableNameString = extractString(variableName)
+    let variableValueString = extractString(calc)
+    createVariable(variableNameString, 'Abstract')
+	return `this.synths['${variableNameString}']${properties || ''} = ${variableValueString}`
+}
+/
+/*
+ Array declaration
+*/
+variableName:Word Space* "=" Space*  array:Array  Space* EOL*{
+    let variableNameString = extractString(variableName)
+    return `this.synths['${variableNameString}'] = ${array}`
+}
+/*
+Effects apply
+*/
+/
+variableName:Word ".apply(" Space* headEffectVariable:Word Space* effectVariables:EffectListElement*  Space* ")"  Space* EOL*{
+    let variableNameString = extractString(variableName)
+    checkVariableDeclaration(variableNameString)
+    let effectsArray = [extractString(headEffectVariable), effectVariables].flat()
+   	effectsArray.forEach((effect)=>checkEffectVariablesApplied(effect))
+    effectsArray = effectsArray.map((effect)=>`musicPlayer['${effect}']`)
+    return `this.synths['${variableNameString}'].chain(${effectsArray.join(", ")}, ToneJS.Destination);`
+}
+
+
+
+/*
+Basic Types
+*/
+Variable = variableName:Word Space* indexes:(ArrayIndexBrackets*) {
+let variableNameString = extractString(variableName)
+checkVariableDeclaration(variableNameString)
+let indexesString = indexes.flat(Infinity).join("")
+return `this.synths['${variableNameString}']${indexesString}`  
+}
+Space = " "
+Letter = [a-zA-Z0-9]
+Number = [+-]?([0-9]*[.])?[0-9]+
+Word = Letter+
+String = (DoubleQuote Space* str:Word Space* DoubleQuote { return str}) / (SingleQuote Space* str:Word Space* SingleQuote { return str})
+SingleQuote = "'"
+DoubleQuote = '"'
+EOL = "\n"
+SynthType = "AMSynth" / "DuoSynth" / "FMSynth" / "MembraneSynth"
+/ "MetalSynth" / "MonoSynth" / "NoiseSynth" / "PluckSynth" / "PolySynth" / "Synth"
+EffectType = "AutoFilter" / "AutoPanner" / "AutoWah" / "BitCrusher" / "Chebyshev" / "Chorus"
+"Distortion" / "FeedbackDelay" / "Freeverb" / "FrequencyShifter" / "JCReverb" /
+"MidSideEffect" / "Phaser" / "PingPongDelay" / "PitchShift" / "Reverb" / "StereoWidener" /
+"Tremolo" / "Vibrato"
+Properties = "." wo:Word props:Properties* {
+  let woString = extractString(wo)
+  let propsString = extractString(props)
+  return `.${woString}${propsString}`
+}
+EffectListElement = "," Space* variableName:Word Space* {return extractString(variableName)}
+
+
+Array = "[" Space* headArrayValue:(HeadNumberArrayElement / HeadStringArrayElement / Array) Space* values:(NumberArrayElement / StringArrayElement / ArrayArrayElement)*  Space* "]" {
+ return `[${[headArrayValue, ...values]}]`
+}
+HeadNumberArrayElement = variableName:Number {return extractString(variableName)}
+HeadStringArrayElement = variableName:String {return `'${extractString(variableName)}'`}
+NumberArrayElement = "," Space* variableName:Number Space* {return extractString(variableName)}
+StringArrayElement = "," Space* variableName:String Space* {return `'${extractString(variableName)}'`}
+ArrayArrayElement = "," Space* arr:Array Space* {return arr}
+ArrayIndexBrackets = "[" Space* index:[0-9]* Space* "]"
+
+LogicalOperator = "===" / "=="  / "<==" / "<=" / "<" / ">==" / ">=" / ">" / "!==" / "!=" 
+MathOperator = "+" / "-" / "/" / "*" / "%"
+Calculation =  head:( Number / s:String {return `'${s}'`} / Variable) Space* calcs:(MathOperator Space* ( Number / s:String {return `'${s}'`} / Variable ) Space*)* {
+	let headString = extractString(head)
+    let calcsString = extractString(calcs)
+    return headString+calcsString
+}
+
+
