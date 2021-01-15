@@ -1,0 +1,131 @@
+{
+    let variables = {};
+    
+
+    function createVariable(variableName, type){
+		variables[variableName] = type
+    }
+    
+    function checkVariableDeclaration(string){
+		if(string === 'step'){
+        	error(`variable name '${string}' cannot be used`)
+        }
+    }  
+    
+    function extractString(pegObject){
+		return pegObject.toString().split(",").join("")
+    }
+}
+
+Code = Statement*
+
+Statement = 
+/*
+Declaration + Assignation 
+*/
+variableName:Word properties:Properties? Space* "=" Space* calc:Calculation Space* EOL*{
+	let variableNameString = extractString(variableName)
+    checkVariableDeclaration(variableNameString)
+    let variableValueString = extractString(calc)
+	return `musicPlayer['${variableNameString}']${properties || ''} = ${variableValueString}`
+}
+/
+/*
+ Array declaration
+*/
+variableName:Word Space* "=" Space*  array:Array  Space* EOL*{
+    let variableNameString = extractString(variableName)
+    checkVariableDeclaration(variableNameString)
+    return `musicPlayer['${variableNameString}'] = ${array}`
+}
+
+/*
+Play synth
+*/
+/
+variableName:Word  ".playSynth(" Space* note:Note Space* "," Space* time:Time Space* ")" Space* EOL*{
+	let variableNameString = extractString(variableName)
+    let noteString = extractString(note)
+    let timeString = extractString(time)
+	return `musicPlayer['${variableNameString}'].triggerAttackRelease('${noteString}', '${timeString}')`
+}
+/*
+Play sample
+*/
+/
+variableName:Word  ".playSample()" Space* EOL*{
+	let variableNameString = extractString(variableName)
+	return `musicPlayer['${variableNameString}'].play()`
+}
+/*
+IF ELIF ELSE
+*/
+/
+"if" Space* leftCalc:Calculation Space* logicOp:LogicalOperator Space* rightCalc:Calculation Space* ":" Space* EOL* 
+stmts:(Space stmt:Statement{return `${stmt};`})+
+elifblock:(
+ "elif" Space* elifLeftCalc:Calculation Space* elifLogicOp:LogicalOperator Space* elifRightCalc:Calculation Space* ":" Space* EOL*
+ elifStmts:(Space stmt:Statement{return `${stmt};`})+ {
+   let elifStatementsString = extractString(elifStmts)
+   return `else if(${elifLeftCalc} ${elifLogicOp} ${elifRightCalc}){${elifStatementsString}}`
+ }
+)*
+elseblock:(
+ "else" Space* ":" Space* EOL*
+ elseStmts:(Space stmt:Statement{return `${stmt};`})+ {
+   let elseStatementsString = extractString(elseStmts)
+   return `else {${elseStatementsString}}`
+ }
+)*
+{
+	let statementsString = extractString(stmts)
+	return `if(${leftCalc} ${logicOp} ${rightCalc}){${statementsString}}${elifblock}${elseblock}`
+}
+
+/*
+Basic Types
+*/
+Variable = variableName:Word indexes:(ArrayIndexBrackets*) {
+let variableNameString = extractString(variableName)
+let indexesString = indexes.flat(Infinity).join("")
+return `musicPlayer['${variableNameString}']${indexesString}`  
+}
+Space = " "
+Letter = [a-zA-Z0-9]
+Number = [+-]?([0-9]*[.])?[0-9]+
+Word = Letter+
+String = (DoubleQuote Space* str:Word Space* DoubleQuote { return str}) / (SingleQuote Space* str:Word Space* SingleQuote { return str})
+SingleQuote = "'"
+DoubleQuote = '"'
+EOL = "\n"
+Properties = "." wo:Word props:Properties* {
+  let woString = extractString(wo)
+  let propsString = extractString(props)
+  return `.${woString}${propsString}`
+}
+
+Array = "[" Space* EOL* headArrayValue:(HeadNumberArrayElement / HeadStringArrayElement / Array) Space* values:(NumberArrayElement / StringArrayElement / ArrayArrayElement)* Space* EOL* Space*"]" {
+ return `[${[headArrayValue, ...values]}]`
+}
+HeadNumberArrayElement = variableName:Number {return extractString(variableName)}
+HeadStringArrayElement = variableName:String {return `'${extractString(variableName)}'`}
+NumberArrayElement = "," Space* variableName:Number Space* {return extractString(variableName)}
+StringArrayElement = "," Space* variableName:String Space* {return `'${extractString(variableName)}'`}
+ArrayArrayElement = "," Space* EOL* Space* arr:Array Space* {return arr}
+ArrayIndexBrackets = "[" Calculation "]"
+Note = SingleQuote Space* note:([a-gA-G][0-9]) Space* SingleQuote {return note} 
+/ DoubleQuote Space* note:([a-gA-G][0-9]) Space* DoubleQuote {return note} 
+Time = DoubleQuote Space* time:Number Space* DoubleQuote {return time}
+/ SingleQuote Space* time:Number Space* SingleQuote {return time} 
+/ DoubleQuote Space* time:([1-9]"n") Space* DoubleQuote {return time}
+/ SingleQuote Space* time:([1-9]"n") Space* SingleQuote {return time}
+
+LogicalOperator = "===" / "=="  / "<==" / "<=" / "<" / ">==" / ">=" / ">" / "!==" / "!=" 
+MathOperator = "+" / "-" / "/" / "*" / "%"
+Calculation =  head:( Number / s:String {return `'${s}'`} / Variable) Space* calcs:(MathOperator Space* ( Number / s:String {return `'${s}'`} / Variable ) Space*)* {
+	let headString = extractString(head)
+    let calcsString = extractString(calcs)
+    return headString+calcsString
+}
+
+
