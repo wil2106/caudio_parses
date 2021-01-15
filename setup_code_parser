@@ -136,4 +136,3 @@ Calculation =  head:( Number / s:String {return `'${s}'`} / Variable) Space* cal
     return headString+calcsString
 }
 
-
